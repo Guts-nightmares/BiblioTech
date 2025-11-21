@@ -1,0 +1,262 @@
+====================================================================
+STRUCTURE DU PROJET BIBLIOTHEQUE
+====================================================================
+Projet : BiblioTech - Système de gestion de bibliothèque
+Auteurs : Samuel et Bertrand
+Date : 16/11/2025
+====================================================================
+
+==============================
+STRUCTURE DE LA BASE DE DONNÉES
+==============================
+
+1. TABLE : Livres
+   - Id (INTEGER, PRIMARY KEY, AUTOINCREMENT)
+   - Titre (TEXT, NOT NULL)
+   - Auteur (TEXT, NOT NULL)          // Simple chaîne de caractères
+   - AnneePublication (INTEGER)
+   - ISBN (TEXT)
+   - Genre (TEXT)
+
+2. TABLE : Emprunts
+   - Id (INTEGER, PRIMARY KEY, AUTOINCREMENT)
+   - LivreId (INTEGER, NOT NULL)          // FOREIGN KEY → Livres(Id)
+   - UtilisateurId (INTEGER, NOT NULL)    // FOREIGN KEY → Utilisateurs(IdUtilisateur)
+   - DateEmprunt (TEXT, NOT NULL)
+   - DateRetour (TEXT, NULL)
+
+3. TABLE : Utilisateurs
+   - IdUtilisateur (INTEGER, PRIMARY KEY, AUTOINCREMENT)
+   - Nom (TEXT, NOT NULL)
+   - Email (TEXT, NOT NULL, UNIQUE)
+   - MotDePasseHash (TEXT, NOT NULL)  // Hash SHA256
+   - Role (INTEGER, NOT NULL)          // 0 = Utilisateur, 1 = Admin
+
+RELATIONS ENTRE TABLES :
+- Livres (1) ←→ (N) Emprunts (via LivreId)
+- Utilisateurs (1) ←→ (N) Emprunts (via UtilisateurId)
+
+Note : Toutes les relations utilisent des clés étrangères pour garantir l'intégrité référentielle.
+
+==============================
+CLASSES MÉTIER (MODÈLES)
+==============================
+
+1. Document.cs (CLASSE ABSTRAITE)
+   - Rôle : Classe de base pour tous les types de documents
+   - Propriétés :
+       - Id (int)
+       - Titre (string)
+       - AnneePublication (int)
+   - Méthodes :
+       - AfficherInfos() (abstract string)
+   - Héritée par : Livre
+   - Usage : Permet l'extension future (DVD, Revues, etc.)
+
+2. Livre.cs (CLASSE CONCRÈTE)
+   - Rôle : Représente un livre du catalogue
+   - Hérite de : Document
+   - Mappée à : TABLE Livres
+   - Propriétés supplémentaires :
+       - Auteur (string)         // Pas de relation avec classe Auteur
+       - ISBN (string)
+       - Genre (string)
+   - Méthodes :
+       - AfficherInfos() override → Retourne infos formatées
+       
+4. Utilisateur.cs (CLASSE CONCRÈTE)
+   - Rôle : Gestion des utilisateurs et authentification
+   - Mappée à : TABLE Utilisateurs
+   - Propriétés :
+       - IdUtilisateur (int)
+       - Nom (string)
+       - Email (string)
+       - MotDePasseHash (string)
+       - Role (RoleUtilisateur) // Enum : Utilisateur | Admin
+   - Méthodes statiques :
+       - HashMotDePasse(string) → string (SHA256)
+   - Méthodes :
+       - VerifierMotDePasse(string) → bool
+
+5. Emprunt.cs (CLASSE CONCRÈTE)
+   - Rôle : Représente un emprunt de livre
+   - Mappée à : TABLE Emprunts
+   - Propriétés :
+       - Id (int)
+       - LivreEmprunte (Livre)         // Objet Livre complet
+       - Utilisateur (Utilisateur)     // Objet Utilisateur complet
+       - DateEmprunt (DateTime)
+       - DateRetour (DateTime?)        // Nullable (null = non rendu)
+   - Méthodes :
+       - EstRendu() → bool
+   - Note : En mémoire utilise des objets, en DB stocke LivreId et UtilisateurId avec clés étrangères
+
+==============================
+CLASSES DE GESTION (SERVICES)
+==============================
+
+6. DatabaseService.cs (SERVICE PRINCIPAL)
+   - Rôle : Couche d'accès aux données - Interface avec SQLite
+   - Propriétés :
+       - dbPath (string)
+       - connectionString (string)
+   - Méthodes - Initialisation :
+       - InitDatabase() → Crée tables si inexistantes
+       - InitialiserDonneesDemo() → Insère données de test
+   - Méthodes - Livres :
+       - SauverLivre(Livre) → INSERT
+       - LireTousLesLivres() → SELECT → List<Livre>
+   - Méthodes - Emprunts :
+       - SauverEmprunt(Emprunt) → INSERT
+       - LireEmprunts(List<Livre>) → SELECT → List<Emprunt>
+       - RendreEmprunt(int idEmprunt) → UPDATE DateRetour
+   - Méthodes - Utilisateurs :
+       - Authentifier(email, mdp) → Utilisateur | null
+       - InscrireUtilisateur(nom, email, mdp) → bool
+       - LireTousLesUtilisateurs() → List<Utilisateur>
+       - SupprimerUtilisateur(int id) → bool
+       - ChangerRole(int id, RoleUtilisateur) → bool
+   - Usage : Toutes les opérations de persistance passent par ce service
+
+==============================
+CLASSES INTERFACE (WINFORMS)
+==============================
+
+7. LoginForm.cs
+   - Rôle : Écran de connexion
+   - Appelle : DatabaseService.Authentifier()
+   - Navigue vers : MainForm (si authentification réussie)
+
+8. RegisterForm.cs
+   - Rôle : Écran d'inscription utilisateur
+   - Appelle : DatabaseService.InscrireUtilisateur()
+
+9. MainForm.cs
+   - Rôle : Menu principal après connexion
+   - Navigue vers : CatalogueForm, EmpruntsForm, AdminForm
+   - Appelle : DatabaseService pour initialisation
+
+10. CatalogueForm.cs
+   - Rôle : Affichage et recherche des livres
+   - Appelle : DatabaseService.LireTousLesLivres()
+   - Fonctionnalités :
+       - Affichage liste livres (ListBox)
+       - Recherche par titre/auteur/genre
+       - Tri par Titre / Auteur / Année / Genre
+
+11. AddBookForm.cs
+   - Rôle : Formulaire d'ajout de livre (Admin uniquement)
+   - Appelle : DatabaseService.SauverLivre()
+   - Champs : Titre, Auteur, Année, ISBN, Genre
+
+12. EmpruntsForm.cs
+   - Rôle : Gestion des emprunts par l'utilisateur
+   - Appelle :
+       - DatabaseService.LireTousLesLivres()
+       - DatabaseService.SauverEmprunt()
+       - DatabaseService.LireEmprunts()
+       - DatabaseService.RendreEmprunt()
+
+13. AdminForm.cs
+   - Rôle : Interface d'administration (réservée aux admins)
+   - Appelle :
+       - DatabaseService.LireTousLesUtilisateurs()
+       - DatabaseService.SupprimerUtilisateur()
+       - DatabaseService.ChangerRole()
+   - Fonctionnalités :
+       - Liste des utilisateurs
+       - Suppression d'utilisateurs
+       - Modification des rôles
+
+FLUX DE DONNÉES
+
+AUTHENTIFICATION :
+LoginForm → DatabaseService.Authentifier()
+
+SELECT sur Utilisateurs
+
+Vérification hash SHA256
+
+Retourne Utilisateur ou null
+
+AJOUT LIVRE :
+AddBookForm → Crée objet Livre → DatabaseService.SauverLivre()
+
+INSERT dans Livres
+
+Retourne Id auto-incrément
+
+EMPRUNTER UN LIVRE :
+EmpruntsForm → Crée objet Emprunt(Livre, Utilisateur) → DatabaseService.SauverEmprunt()
+
+INSERT dans Emprunts (stocke LivreId et UtilisateurId)
+
+AFFICHER EMPRUNTS :
+EmpruntsForm → DatabaseService.LireEmprunts(livres)
+
+SELECT Emprunts INNER JOIN Utilisateurs
+
+Reconstruit objets Emprunt complets en mémoire (avec Livre et Utilisateur)
+
+Affiche dans ListBox
+
+RENDRE UN LIVRE :
+EmpruntsForm → DatabaseService.RendreEmprunt(id)
+
+UPDATE Emprunts SET DateRetour = NOW()
+
+ARCHITECTURE GLOBALE
+
+COUCHE PRÉSENTATION (Windows Forms) :
+LoginForm | RegisterForm | MainForm | CatalogueForm | AddBookForm | EmpruntsForm | AdminForm
+→ Appelle directement
+
+COUCHE SERVICE :
+DatabaseService (accès données SQLite - service unique centralisé)
+→ CRUD operations
+
+COUCHE DONNÉES :
+SQLite Database (bibliotech.db)
+Tables : Livres | Emprunts | Utilisateurs
+→ Mappées vers
+
+COUCHE MODÈLE :
+Document (abstract) | Livre | Utilisateur | Emprunt
+
+Architecture simplifiée : tous les formulaires utilisent directement DatabaseService sans couche intermédiaire.
+
+CORRECTIONS APPORTÉES
+
+✓ Classe Auteur.cs supprimée
+  - N'était jamais utilisée
+  - Les auteurs restent stockés comme string dans Livre
+
+✓ Relation Emprunts → Utilisateurs corrigée
+  - Utilise maintenant UtilisateurId (INTEGER) avec clé étrangère
+  - Garantit l'intégrité référentielle
+  - Plus de problème si deux utilisateurs ont le même nom
+
+✓ Classes Bibliotheque et GestionEmprunts supprimées
+  - Redondantes avec DatabaseService
+  - Tous les formulaires utilisent directement DatabaseService
+  - Architecture simplifiée et plus maintenable
+
+COMPTES DE TEST
+
+ADMINISTRATEUR :
+
+Email : admin@bibliotech.fr
+
+Mot de passe : admin123
+
+Rôle : Admin
+
+UTILISATEUR STANDARD :
+
+Email : user@bibliotech.fr
+
+Mot de passe : user123
+
+Rôle : Utilisateur
+
+FIN DU DOCUMENT
